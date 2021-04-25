@@ -89,40 +89,6 @@ resource "google_container_registry" "registry" {
   location              = var.container_registry_location
 }
 
-#resource "google_storage_bucket_iam_member" "viewer" {
-#  bucket = google_container_registry.registry.id
-#  role = "roles/storage.objectViewer"
-#  member = "user:tf-gke-jb-homework-clu-lqxx@px-sre-homework.iam.gserviceaccount.com"
-#  #oauth_scopes = var.gke_oauth_scopes
-#}
-
-#resource "google_artifact_registry_repository" "my-repo"     {
-#  provider = google-beta
-#
-#  location = var.region
-#  repository_id = "${var.project_id}"
-#  description = "Docker repo for ${var.project_id}"
-#  format = "DOCKER"
-#}
-
-#resource "google_service_account" "repo-account" {
-#  provider = google-beta
-#
-#  account_id   = "tf-gke-jb-homework-clu-lqxx"
-#  display_name = "Repository Service Account"
-#}
-
-#resource "google_artifact_registry_repository_iam_member" "repo-iam" {
-#  provider = google-beta
-#
-#  location = google_artifact_registry_repository.my-repo.location
-#  repository = google_artifact_registry_repository.my-repo.name
-#  role   = "roles/artifactregistry.reader"
-#  member = "serviceAccount:${google_service_account.repo-account.email}"
-#}
-
-
-
 resource "kubernetes_deployment" "example" {
   metadata {
     name = var.app_name
