@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+  "github.com/prometheus/client_golang/prometheus"
+  "github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -26,6 +28,18 @@ const (
 var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
+)
+
+var (
+  messageDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+    Name: "lazychat_client_message_duration_seconds",
+    Help: "Duration of HTTP requests.",
+  }, []string{"direction"})
+
+  clientErrors = promauto.NewCounter(prometheus.CounterOpts{
+    Name: "lazychat_client_errors_total",
+    Help: "Count of unforced client errors",
+  })
 )
 
 var upgrader = websocket.Upgrader{
@@ -48,10 +62,12 @@ func (this *Client) readPump() {
 	this.conn.SetReadDeadline(time.Now().Add(pongWait))
 	this.conn.SetPongHandler(func(string) error { this.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
+    startTime := time.Now()
 		// Inject random errors and delay
 		this.injectRandomDelay(minDelayMs, maxDelayMs, pstChanceOfDelay)
 		err := this.injectRandomError(pstChanceOfError)
 		if err != nil {
+      messageDuration.WithLabelValues("read").Observe(time.Now().Sub(startTime).Seconds())
 			break
 		}
 
@@ -60,11 +76,14 @@ func (this *Client) readPump() {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.Printf("error: %v", err)
 			}
+      clientErrors.Inc()
+      messageDuration.WithLabelValues("read").Observe(time.Now().Sub(startTime).Seconds())
 			break
 		}
 
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 		this.hub.broadcast <- message
+    messageDuration.WithLabelValues("read").Observe(time.Now().Sub(startTime).Seconds())
 	}
 }
 
@@ -75,12 +94,14 @@ func (this *Client) writePump() {
 		this.conn.Close()
 	}()
 	for {
+    startTime := time.Now()
 		select {
 		case message, ok := <-this.send:
 			this.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// The hub closed the channel.
 				this.conn.WriteMessage(websocket.CloseMessage, []byte{})
+        messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 				return
 			}
 
@@ -88,11 +109,14 @@ func (this *Client) writePump() {
 			this.injectRandomDelay(minDelayMs, maxDelayMs, pstChanceOfDelay)
 			err := this.injectRandomError(pstChanceOfError)
 			if err != nil {
+        messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 				return
 			}
 
 			w, err := this.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+        clientErrors.Inc()
+        messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 				return
 			}
 			w.Write(message)
@@ -105,14 +129,17 @@ func (this *Client) writePump() {
 			}
 
 			if err := w.Close(); err != nil {
+        messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 				return
 			}
 		case <-ticker.C:
 			this.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := this.conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+        messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 				return
 			}
 		}
+    messageDuration.WithLabelValues("write").Observe(time.Now().Sub(startTime).Seconds())
 	}
 }
 
@@ -127,6 +154,7 @@ func (this *Client) injectRandomDelay(minDelayMs int, maxDelayMs int, pstChanceO
 func (this *Client) injectRandomError(pstChanceOfError int) error {
 	rand.Seed(time.Now().UnixNano())
 	if rand.Intn(100) <= pstChanceOfError {
+    clientErrors.Inc()
 		return errors.New("random error")
 	}
 	return nil

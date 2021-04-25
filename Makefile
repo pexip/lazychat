@@ -7,14 +7,16 @@ all: build
 build: clean
 	mkdir -p $(BUILD_DIR)
 	go install ./cmd/$(CMD)/*
-	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/$(CMD)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY) ./cmd/$(CMD)
 
 docker: build
-	docker build -t habakke/lazy-chat:latest .
-	docker push habakke/lazy-chat
+	docker build -t gcr.io/px-sre-homework/lazy-chat:latest .
+
+push: docker
+	docker push gcr.io/px-sre-homework/lazy-chat:latest
 
 docker-run: docker
-	docker run -p 8080:8080 habakke/lazy-chat
+	docker run -p 8080:8080 -d --read-only --tmpfs /run --tmpfs /tmp gcr.io/px-sre-homework/lazy-chat
 
 start:
 	go run $(ROOT_DIR)/cmd/$(CMD)
